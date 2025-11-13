@@ -81,6 +81,62 @@ static ssize_t hypiso_sysfs_core_config_show(struct kobject *kobj,
 		cpumask_pr_args(host_cpus), cpumask_pr_args(guest_cpus));
 }
 
+static ssize_t hypiso_sysfs_watchdog_interval_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	long interval;
+
+	if (kstrtol(buf, 0, &interval)) {
+		printk("HYPISO: parsing of '%s' as a number failed\n", buf);
+		return count;
+	}
+
+	if (interval < 100) {
+		printk("HYPISO: watchdog interval must be at least 100ms\n");
+		return count;
+	}
+
+	hypiso_watchdog_interval_ms = interval;
+	printk("HYPISO: watchdog interval set to %d ms\n", hypiso_watchdog_interval_ms);
+
+	return count;
+}
+
+static ssize_t hypiso_sysfs_watchdog_interval_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hypiso_watchdog_interval_ms);
+}
+
+static ssize_t hypiso_sysfs_scale_request_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	long request;
+
+	if (kstrtol(buf, 0, &request)) {
+		printk("HYPISO: parsing of '%s' as a number failed\n", buf);
+		return count;
+	}
+
+	if (request < -1 || request > 1) {
+		printk("HYPISO: scale_request must be -1, 0, or 1\n");
+		return count;
+	}
+
+	hypiso_scale_request = request;
+	printk("HYPISO: scale request set to %ld\n", request);
+
+	return count;
+}
+
+static ssize_t hypiso_sysfs_scale_request_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hypiso_scale_request);
+}
+
 static struct kobj_attribute hypiso_sysfs_hypiso_on = {
 	.attr = {
 		.name = "hypiso_on",
@@ -116,11 +172,31 @@ static struct kobj_attribute hypiso_sysfs_core_config = {
 	.show = hypiso_sysfs_core_config_show,
 };
 
+static struct kobj_attribute hypiso_sysfs_watchdog_interval = {
+	.attr = {
+		.name = "watchdog_interval_ms",
+		.mode = S_IWUSR | S_IRUSR,
+	},
+	.store = hypiso_sysfs_watchdog_interval_store,
+	.show = hypiso_sysfs_watchdog_interval_show,
+};
+
+static struct kobj_attribute hypiso_sysfs_scale_request = {
+	.attr = {
+		.name = "scale_request",
+		.mode = S_IWUSR | S_IRUSR,
+	},
+	.store = hypiso_sysfs_scale_request_store,
+	.show = hypiso_sysfs_scale_request_show,
+};
+
 static struct attribute *hysiso_attrs[] = {
 	&hypiso_sysfs_hypiso_on.attr,
 	&hypiso_sysfs_nr_host_cpus.attr,
 	&hypiso_sysfs_nr_guest_cpus.attr,
 	&hypiso_sysfs_core_config.attr,
+	&hypiso_sysfs_watchdog_interval.attr,
+	&hypiso_sysfs_scale_request.attr,
 	NULL,
 };
 
