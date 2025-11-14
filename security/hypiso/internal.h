@@ -26,4 +26,10 @@ int hypiso_runner(void *data);
 
 void hypiso_init_sysfs(void);
 
+// Scaling watchdog
+void hypiso_init_watchdog(void);
+void hypiso_stop_watchdog(void);
+extern int hypiso_watchdog_interval_ms;
+extern int hypiso_scale_request;  /* 0 = no change, 1 = scale up, -1 = scale down */
+
 #endif /* __HYPISO_INTERNAL_H__ */

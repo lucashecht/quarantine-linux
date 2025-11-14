@@ -60,6 +60,7 @@ void hypiso_init(void)
 	zalloc_cpumask_var(&guest_cpus, GFP_KERNEL);
 	hypiso_config_cores();
 	hypiso_init_sysfs();
+	hypiso_init_watchdog();
 	if (hypiso_on)
 		hypiso_enable();
 }
