@@ -13,9 +13,16 @@ extern int hypiso_nr_host_cpus;
 extern int hypiso_nr_guest_cpus;
 extern u64 hypiso_nr_vcpus;
 extern struct kvm_vcpu *hypiso_vcpus[MAX_NR_VCPUS];
+extern spinlock_t hypiso_cpumask_lock;
 void hypiso_set_nr_host_cpus(int new_nr_host_cpus);
 void hypiso_set_nr_guest_cpus(int new_nr_guest_cpus);
+int hypiso_scale_up_host_cores(void);
+int hypiso_scale_down_host_cores(void);
 
+void hypiso_isolate_processes(const struct cpumask *cpus);
+void hypiso_isolate_vcpus(const struct cpumask *cpus);
+void hypiso_reroute_irqs(const struct cpumask *cpus);
+void hypiso_enforce_isolation(void);
 void hypiso_enable(void);
 void hypiso_disable(void);
 

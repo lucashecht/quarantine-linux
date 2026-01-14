@@ -1,6 +1,6 @@
 #include "internal.h"
 
-static void hypiso_isolate_processes(const struct cpumask *cpus)
+void hypiso_isolate_processes(const struct cpumask *cpus)
 {
 	struct task_struct *task;
 
@@ -10,7 +10,18 @@ static void hypiso_isolate_processes(const struct cpumask *cpus)
 	}
 }
 
-static void hypiso_reroute_irqs(const struct cpumask *cpus)
+void hypiso_isolate_vcpus(const struct cpumask *cpus)
+{
+	int i;
+	struct kvm_vcpu *vcpu;
+
+	for (i = 0; i < hypiso_nr_vcpus; i++) {
+		vcpu = hypiso_vcpus[i];
+		sched_setaffinity(vcpu->runner->pid, cpus);
+	}
+}
+
+void hypiso_reroute_irqs(const struct cpumask *cpus)
 {
 	int irq;
 	for_each_active_irq(irq)
@@ -34,6 +45,16 @@ static void hypiso_stop_runners(void)
 	int i;
 	for (i = 0; i < hypiso_nr_vcpus; i++)
 		reinit_completion(&hypiso_vcpus[i]->runner_activated);
+}
+
+void hypiso_enforce_isolation(void)
+{
+	if (!hypiso_on)
+		return;
+	hypiso_isolate_processes(host_cpus);
+	hypiso_reroute_irqs(host_cpus);
+	//hypiso_start_runners();	// unnecessary with hypiso_isolate_vcpus?
+	hypiso_isolate_vcpus(guest_cpus); // now this gets called twice
 }
 
 void hypiso_enable(void)

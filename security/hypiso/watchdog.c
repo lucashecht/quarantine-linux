@@ -10,35 +10,29 @@ static struct task_struct *watchdog_task;
 static void hypiso_check_scaling(void)
 {
 	int request;
+	int ret;
 
 	request = READ_ONCE(hypiso_scale_request);  // atomic read
 	
+	/* Listen for scaling signal
+	   TODO: replace with actual utilisation metric */
 	if (request == 0)
 		return;
 
 	printk("HYPISO: Watchdog detected scaling request: %d\n", request);
 
 	if (request > 0) {
-		// Scale up
-		int new_nr = hypiso_nr_host_cpus + 1;
-		printk("HYPISO: Scaling up host cores from %d to %d\n", 
-			hypiso_nr_host_cpus, new_nr);
-		
-		// TODO: Add actual scaling logic here
-		hypiso_set_nr_host_cpus(new_nr);
-		
-	} else if (request < 0) {
-		// Scale down
-		int new_nr = hypiso_nr_host_cpus - 1;
-		if (new_nr < 1) {
-			printk("HYPISO: Cannot scale down below 1 host core\n");
-			WRITE_ONCE(hypiso_scale_request, 0);
-			return;
+		/* Scale up */
+		ret = hypiso_scale_up_host_cores();
+		if (ret != 0) {
+			printk("HYPISO: Failed to scale up host cores (ret=%d)\n", ret);
 		}
-		
-		printk("HYPISO: Scaling down host cores from %d to %d\n",
-			hypiso_nr_host_cpus, new_nr);
-		hypiso_set_nr_host_cpus(new_nr);
+	} else if (request < 0) {
+		/* Scale down */
+		ret = hypiso_scale_down_host_cores();
+		if (ret != 0) {
+			printk("HYPISO: Failed to scale down host cores (ret=%d)\n", ret);
+		}
 	}
 
 	WRITE_ONCE(hypiso_scale_request, 0);

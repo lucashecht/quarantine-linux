@@ -194,7 +194,7 @@ static struct attribute *hysiso_attrs[] = {
 	&hypiso_sysfs_hypiso_on.attr,
 	&hypiso_sysfs_nr_host_cpus.attr,
 	&hypiso_sysfs_nr_guest_cpus.attr,
-	&hypiso_sysfs_core_config.attr,h
+	&hypiso_sysfs_core_config.attr,
 	&hypiso_sysfs_watchdog_interval.attr,
 	&hypiso_sysfs_scale_request.attr,
 	NULL,
