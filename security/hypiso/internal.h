@@ -19,9 +19,6 @@ void hypiso_set_nr_guest_cpus(int new_nr_guest_cpus);
 int hypiso_scale_up_host_cores(void);
 int hypiso_scale_down_host_cores(void);
 
-void hypiso_isolate_processes(const struct cpumask *cpus);
-void hypiso_isolate_vcpus(const struct cpumask *cpus);
-void hypiso_reroute_irqs(const struct cpumask *cpus);
 void hypiso_enforce_isolation(void);
 void hypiso_enable(void);
 void hypiso_disable(void);

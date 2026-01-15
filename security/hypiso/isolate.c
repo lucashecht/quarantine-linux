@@ -1,16 +1,24 @@
 #include "internal.h"
 
-void hypiso_isolate_processes(const struct cpumask *cpus)
+static void hypiso_isolate_processes(const struct cpumask *cpus)
 {
-	struct task_struct *task;
+	struct task_struct *p, *t;
+	char comm[TASK_COMM_LEN];
+	char new_comm[TASK_COMM_LEN];
 
-	for_each_process(task) {
-		if (!(task->flags & PF_KTHREAD))
-			sched_setaffinity(task->pid, cpus);
+	for_each_process(p) {
+		// doesn't affect watchdog
+		if (p->flags & PF_KTHREAD)
+			continue;
+		for_each_thread(p, t) {
+			if (t->flags & PF_KTHREAD)
+				continue;
+			sched_setaffinity(t->pid, cpus);
+		}
 	}
 }
 
-void hypiso_isolate_vcpus(const struct cpumask *cpus)
+static void hypiso_isolate_vcpus(const struct cpumask *cpus)
 {
 	int i;
 	struct kvm_vcpu *vcpu;
@@ -21,7 +29,7 @@ void hypiso_isolate_vcpus(const struct cpumask *cpus)
 	}
 }
 
-void hypiso_reroute_irqs(const struct cpumask *cpus)
+static void hypiso_reroute_irqs(const struct cpumask *cpus)
 {
 	int irq;
 	for_each_active_irq(irq)
