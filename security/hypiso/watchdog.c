@@ -62,6 +62,8 @@ void hypiso_init_watchdog(void)
 		return;
 	}
 
+	hypiso_watchdog_pid = watchdog_task->pid;
+
     // Set CPU affinity to host CPUs
 	kthread_bind_mask(watchdog_task, host_cpus);
 	

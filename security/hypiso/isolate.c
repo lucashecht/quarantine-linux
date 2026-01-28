@@ -18,6 +18,13 @@ static void hypiso_isolate_processes(const struct cpumask *cpus)
 	}
 }
 
+static void hypiso_isolate_watchdog(const struct cpumask *cpus)
+{
+	if (hypiso_watchdog_pid > 0) {
+		sched_setaffinity(hypiso_watchdog_pid, cpus);
+	}
+}
+
 static void hypiso_isolate_vcpus(const struct cpumask *cpus)
 {
 	int i;
@@ -60,8 +67,8 @@ void hypiso_enforce_isolation(void)
 	if (!hypiso_on)
 		return;
 	hypiso_isolate_processes(host_cpus);
+	hypiso_isolate_watchdog(host_cpus);
 	hypiso_reroute_irqs(host_cpus);
-	//hypiso_start_runners();	// unnecessary with hypiso_isolate_vcpus?
 	hypiso_isolate_vcpus(guest_cpus); // now this gets called twice
 }
 
