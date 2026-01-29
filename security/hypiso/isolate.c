@@ -3,8 +3,6 @@
 static void hypiso_isolate_processes(const struct cpumask *cpus)
 {
 	struct task_struct *p, *t;
-	char comm[TASK_COMM_LEN];
-	char new_comm[TASK_COMM_LEN];
 
 	for_each_process(p) {
 		// doesn't affect watchdog
@@ -25,7 +23,7 @@ static void hypiso_isolate_watchdog(const struct cpumask *cpus)
 	}
 }
 
-static void hypiso_isolate_vcpus(const struct cpumask *cpus)
+void hypiso_isolate_vcpus(const struct cpumask *cpus)
 {
 	int i;
 	struct kvm_vcpu *vcpu;

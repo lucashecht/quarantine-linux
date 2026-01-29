@@ -19,6 +19,7 @@ void hypiso_set_nr_guest_cpus(int new_nr_guest_cpus);
 int hypiso_scale_up_host_cores(void);
 int hypiso_scale_down_host_cores(void);
 
+void hypiso_isolate_vcpus(const struct cpumask *cpus);
 void hypiso_enforce_isolation(void);
 void hypiso_enable(void);
 void hypiso_disable(void);
@@ -31,7 +32,7 @@ int hypiso_runner(void *data);
 void hypiso_init_sysfs(void);
 
 // Scaling watchdog
-pid_t hypiso_watchdog_pid;
+extern pid_t hypiso_watchdog_pid;
 void hypiso_init_watchdog(void);
 void hypiso_stop_watchdog(void);
 extern int hypiso_watchdog_interval_ms;

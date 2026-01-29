@@ -6,6 +6,7 @@ int hypiso_watchdog_interval_ms = 1000;  // 1 second
 int hypiso_scale_request = 0;  // 0 = no change, 1 = scale up, -1 = scale down
 
 static struct task_struct *watchdog_task;
+pid_t hypiso_watchdog_pid = -1;
 
 static void hypiso_check_scaling(void)
 {
@@ -13,7 +14,7 @@ static void hypiso_check_scaling(void)
 	int ret;
 
 	request = READ_ONCE(hypiso_scale_request);  // atomic read
-	
+
 	/* Listen for scaling signal
 	   TODO: replace with actual utilisation metric */
 	if (request == 0)
@@ -46,7 +47,7 @@ static int hypiso_watchdog_thread(void *data)
 		if (hypiso_on) {
 			hypiso_check_scaling();
 		}
-		
+
 		msleep_interruptible(hypiso_watchdog_interval_ms);
 	}
 
@@ -66,10 +67,10 @@ void hypiso_init_watchdog(void)
 
     // Set CPU affinity to host CPUs
 	kthread_bind_mask(watchdog_task, host_cpus);
-	
+
 	wake_up_process(watchdog_task);
-	
-	printk("HYPISO: Watchdog initialized, interval=%d ms\n", 
+
+	printk("HYPISO: Watchdog initialized, interval=%d ms\n",
 		hypiso_watchdog_interval_ms);
 }
 
