@@ -85,3 +85,8 @@ void hypiso_disable(void)
 	hypiso_reroute_irqs(cpu_online_mask);
 	hypiso_isolate_processes(cpu_online_mask);
 }
+
+void hypiso_microarch_clean_cpu(int cpu)
+{
+	/*Placeholder for microarchitectural state cleaning on CPU 'cpu' */
+}

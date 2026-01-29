@@ -17,6 +17,52 @@ struct kvm_vcpu *hypiso_vcpus[MAX_NR_VCPUS];
 DEFINE_SPINLOCK(hypiso_cpumask_lock);
 
 /*
+ * Remove one core (and all its siblings) from @cpus.
+ * Returns the first CPU number of the removed core, or -1 if cpus is empty.
+ */
+static int hypiso_remove_one_core(cpumask_var_t cpus)
+{
+	int cpu, sibling;
+	int first_cpu;
+
+	printk("HYPISO: Before %*pbl\n", cpumask_pr_args(cpus));
+	cpu = cpumask_first(cpus);
+	printk("HYPISO: first %d\n", cpu);
+	if (cpu >= nr_cpu_ids)
+		return -1;
+
+	first_cpu = cpu;
+	for_each_cpu(sibling, topology_sibling_cpumask(cpu)) {
+		printk("HYPISO: sibling %d\n", sibling);
+		cpumask_clear_cpu(sibling, cpus);
+	}
+
+	printk("HYPISO: After  %*pbl\n", cpumask_pr_args(cpus));
+
+	return first_cpu;
+}
+
+/*
+ * Add one core (and all its siblings) to @cpus based on the specified CPU number.
+ * Returns 0 on success, or -1 if the CPU is invalid.
+ */
+static int hypiso_add_one_core(cpumask_var_t cpus, int cpu)
+{
+	int sibling;
+
+	printk("HYPISO: Before %*pbl\n", cpumask_pr_args(cpus));
+	if (cpu < 0 || cpu >= nr_cpu_ids)
+		return -1;
+
+	for_each_cpu(sibling, topology_sibling_cpumask(cpu))
+		cpumask_set_cpu(sibling, cpus);
+
+	printk("HYPISO: After  %*pbl\n", cpumask_pr_args(cpus));
+
+	return 0;
+}
+
+/*
  * Set @target CPUs in @cpus using a small amount of cores, none of which have a
  * CPU in @taken.
  */
@@ -130,44 +176,62 @@ void hypiso_set_nr_guest_cpus(int new_nr_guest_cpus)
 int hypiso_scale_up_host_cores(void)
 {
 	int new_nr;
+	int repurposed_cpu;
 	unsigned long flags;
+
+	new_nr = hypiso_nr_host_cpus + 1;
+	printk("HYPISO: Scaling up host cores from %d to %d...\n",
+		hypiso_nr_host_cpus, new_nr);
 
 	spin_lock_irqsave(&hypiso_cpumask_lock, flags);
 
-	new_nr = hypiso_nr_host_cpus + 1;
 	if (new_nr + hypiso_nr_guest_cpus > num_online_cpus()) {
 		/* No unassigned CPUs left */
-		if (hypiso_nr_guest_cpus > 1) {
-			/* For the prototype we assume that there's only one guest */
-			/* So 1 guest CPU total is enough */
-			printk("HYPISO: Cannot scale up host cores; trying to scale down guest cores first\n");
+		/* Repurpose a guest core for host use */
+		printk("HYPISO: Cannot scale up host cores; trying to scale down guest cores first\n");
 
-			/* Repurpose a guest core for host use */
-			cpumask_clear(guest_cpus);
-			hypiso_nr_guest_cpus = hypiso_set_cores(guest_cpus, hypiso_nr_guest_cpus - 1, host_cpus);
-			/* TODO: vCPU affinity should be updated before the guest core is removed, to prevent
-			them being scheduled on host cores */
-			hypiso_isolate_vcpus(guest_cpus);
-
-			/* TODO: add repurposing logic */
-			/* TODO: microarch cleaning */
-			/* This needs to trigger a function on the guest core */
-		} else {
-			printk("HYPISO: Cannot scale up host cores; not enough CPUs available\n");
+		/* For the prototype we assume that there's only one guest */
+		/* So 1 guest CPU total is the minimum */
+		if (hypiso_nr_guest_cpus <= 1) {
+			printk("HYPISO: Cannot scale down guest cores; not enough CPUs available\n");
 			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 			return -1;
 		}
+
+		repurposed_cpu = hypiso_remove_one_core(guest_cpus);
+		if (repurposed_cpu < 0) {
+			printk("HYPISO: Failed to repurpose a guest core\n");
+			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
+			return -1;
+		}
+
+		hypiso_nr_guest_cpus--;
+		printk("HYPISO: Repurposing guest CPU %d for host use\n", repurposed_cpu);
+
+		/* vCPU affinity is updated before the guest core is removed, to prevent
+		them being scheduled on host cores */
+		hypiso_isolate_vcpus(guest_cpus);
+
+		/* Clean the repurposed CPU before adding to host pool */
+		hypiso_microarch_clean_cpu(repurposed_cpu);
+
+		/* Add the repurposed guest core to host */
+		if (hypiso_add_one_core(host_cpus, repurposed_cpu) < 0) {
+			printk("HYPISO: Failed to add repurposed core to host\n");
+			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
+			return -1;
+		}
+	} else {
+		/* TODOs:
+		- Can this be made more efficient?
+		- Should the microarch state be cleaned before adding the core to the host or do we assume it is clean?*/
+		hypiso_set_nr_host_cpus(new_nr);
 	}
 
-	printk("HYPISO: Scaling up host cores from %d to %d\n", 
-		hypiso_nr_host_cpus, new_nr);
-
-	cpumask_clear(host_cpus);
-	hypiso_nr_host_cpus = hypiso_set_cores(host_cpus, new_nr, guest_cpus);
+	hypiso_nr_host_cpus++;
 
 	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 
-	// TODO: update watchdog affinity
 	/* Re-apply isolation with new cpumasks */
 	hypiso_enforce_isolation();
 

@@ -23,6 +23,7 @@ void hypiso_isolate_vcpus(const struct cpumask *cpus);
 void hypiso_enforce_isolation(void);
 void hypiso_enable(void);
 void hypiso_disable(void);
+void hypiso_microarch_clean_cpu(int cpu);
 
 void hypiso_host_cpu_init(int cpu);
 
