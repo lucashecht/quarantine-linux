@@ -221,14 +221,14 @@ int hypiso_scale_up_host_cores(void)
 			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 			return -1;
 		}
+		hypiso_nr_host_cpus++;
+
 	} else {
 		/* TODOs:
 		- Can this be made more efficient?
 		- Should the microarch state be cleaned before adding the core to the host or do we assume it is clean?*/
 		hypiso_set_nr_host_cpus(new_nr);
 	}
-
-	hypiso_nr_host_cpus++;
 
 	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 
