@@ -8,14 +8,15 @@ int hypiso_watchdog_interval_ms = 1000;  // 1 second
 int hypiso_scale_request = 0;  // 0 = no change, 1 = scale up, -1 = scale down
 
 /* Utilization tracking configuration */
-#define WINDOW_SIZE 10
-#define SCALE_UP_THRESHOLD 60    // 60% utilization
-#define SCALE_DOWN_THRESHOLD 30  // 30% utilization
-#define CONSECUTIVE_CHECKS 3     // indications before scaling
-#define COOLDOWN_MS 10000        // 10 seconds cooldown
+#define MAX_WINDOW_SIZE 100				 // Maximum samples in window
+int hypiso_window_size = 10;
+int hypiso_scale_up_threshold = 60;      // 60% utilization
+int hypiso_scale_down_threshold = 30;    // 30% utilization
+int hypiso_consecutive_checks = 3;       // indications before scaling
+int hypiso_cooldown_ms = 10000;          // 10 seconds cooldown
 
 struct hypiso_utilization_tracker {
-	u64 samples[WINDOW_SIZE];           // circular buffer of utilization samples
+	u64 samples[MAX_WINDOW_SIZE];       // circular buffer of utilization samples
 	int head;                            // current position in buffer
 	int sample_count;                    // number of samples collected
 	u64 last_idle[NR_CPUS];             // previous idle time per CPU
@@ -96,10 +97,10 @@ static u64 hypiso_update_window(u64 sample)
 	int i, count;
 
 	tracker.samples[tracker.head] = sample;
-	tracker.head = (tracker.head + 1) % WINDOW_SIZE;
+	tracker.head = (tracker.head + 1) % hypiso_window_size;
 
 	/* Track how many samples we have (while buffer is not full) */
-	if (tracker.sample_count < WINDOW_SIZE)
+	if (tracker.sample_count < hypiso_window_size)
 		tracker.sample_count++;
 
 	/* Calculate average of all samples in window */
@@ -117,7 +118,7 @@ static u64 hypiso_update_window(u64 sample)
 static int hypiso_check_utilization(u64 avg_util)
 {
 	unsigned long now = jiffies;
-	unsigned long cooldown_jiffies = msecs_to_jiffies(COOLDOWN_MS);
+	unsigned long cooldown_jiffies = msecs_to_jiffies(hypiso_cooldown_ms);
 
 	/* Check cooldown period */
 	if (time_before(now, tracker.last_scale_jiffies + cooldown_jiffies)) {
@@ -126,26 +127,26 @@ static int hypiso_check_utilization(u64 avg_util)
 	}
 
 	/* Check for high utilization (scale up) */
-	if (avg_util > SCALE_UP_THRESHOLD) {
+	if (avg_util > hypiso_scale_up_threshold) {
 		tracker.consecutive_high++;
 		tracker.consecutive_low = 0;
 
-		if (tracker.consecutive_high >= CONSECUTIVE_CHECKS) {
+		if (tracker.consecutive_high >= hypiso_consecutive_checks) {
 			printk("HYPISO: High utilization detected (%llu%% > %d%%) for %d checks\n",
-				avg_util, SCALE_UP_THRESHOLD, CONSECUTIVE_CHECKS);
+				avg_util, hypiso_scale_up_threshold, hypiso_consecutive_checks);
 			tracker.consecutive_high = 0;
 			tracker.last_scale_jiffies = now;
 			return 1;  /* Scale up */
 		}
 	}
 	/* Check for low utilization (scale down) */
-	else if (avg_util < SCALE_DOWN_THRESHOLD) {
+	else if (avg_util < hypiso_scale_down_threshold) {
 		tracker.consecutive_low++;
 		tracker.consecutive_high = 0;
 
-		if (tracker.consecutive_low >= CONSECUTIVE_CHECKS) {
+		if (tracker.consecutive_low >= hypiso_consecutive_checks) {
 			printk("HYPISO: Low utilization detected (%llu%% < %d%%) for %d checks\n",
-				avg_util, SCALE_DOWN_THRESHOLD, CONSECUTIVE_CHECKS);
+				avg_util, hypiso_scale_down_threshold, hypiso_consecutive_checks);
 			tracker.consecutive_low = 0;
 			tracker.last_scale_jiffies = now;
 			return -1;  /* Scale down */
@@ -224,7 +225,7 @@ void hypiso_init_watchdog(void)
 
 	/* Initialize utilization tracker */
 	memset(&tracker, 0, sizeof(tracker));
-	tracker.last_scale_jiffies = jiffies - msecs_to_jiffies(COOLDOWN_MS);
+	tracker.last_scale_jiffies = jiffies - msecs_to_jiffies(hypiso_cooldown_ms);
 
 	/* Initialize CPU time baselines */
 	for_each_possible_cpu(cpu) {
@@ -248,9 +249,9 @@ void hypiso_init_watchdog(void)
 	wake_up_process(watchdog_task);
 
 	printk("HYPISO: Watchdog initialized, interval=%d ms, window=%d samples\n",
-		hypiso_watchdog_interval_ms, WINDOW_SIZE);
+		hypiso_watchdog_interval_ms, hypiso_window_size);
 	printk("HYPISO: Scale-up threshold: %d%%, Scale-down threshold: %d%%\n",
-		SCALE_UP_THRESHOLD, SCALE_DOWN_THRESHOLD);
+		hypiso_scale_up_threshold, hypiso_scale_down_threshold);
 }
 
 void hypiso_stop_watchdog(void)

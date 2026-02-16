@@ -38,5 +38,10 @@ void hypiso_init_watchdog(void);
 void hypiso_stop_watchdog(void);
 extern int hypiso_watchdog_interval_ms;
 extern int hypiso_scale_request;  /* 0 = no change, 1 = scale up, -1 = scale down */
+extern int hypiso_window_size;
+extern int hypiso_scale_up_threshold;
+extern int hypiso_scale_down_threshold;
+extern int hypiso_consecutive_checks;
+extern int hypiso_cooldown_ms;
 
 #endif /* __HYPISO_INTERNAL_H__ */

@@ -137,6 +137,146 @@ static ssize_t hypiso_sysfs_scale_request_show(struct kobject *kobj,
 	return sprintf(buf, "%d\n", hypiso_scale_request);
 }
 
+static ssize_t hypiso_sysfs_window_size_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	long size;
+
+	if (kstrtol(buf, 0, &size)) {
+		printk("HYPISO: parsing of '%s' as a number failed\n", buf);
+		return count;
+	}
+
+	if (size < 1 || size > 100) {
+		printk("HYPISO: window_size must be between 1 and 100\n");
+		return count;
+	}
+
+	hypiso_window_size = size;
+	printk("HYPISO: window size set to %ld samples\n", size);
+
+	return count;
+}
+
+static ssize_t hypiso_sysfs_window_size_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hypiso_window_size);
+}
+
+static ssize_t hypiso_sysfs_scale_up_threshold_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	long threshold;
+
+	if (kstrtol(buf, 0, &threshold)) {
+		printk("HYPISO: parsing of '%s' as a number failed\n", buf);
+		return count;
+	}
+
+	if (threshold < 0 || threshold > 100) {
+		printk("HYPISO: scale_up_threshold must be between 0 and 100\n");
+		return count;
+	}
+
+	hypiso_scale_up_threshold = threshold;
+	printk("HYPISO: scale up threshold set to %ld%%\n", threshold);
+
+	return count;
+}
+
+static ssize_t hypiso_sysfs_scale_up_threshold_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hypiso_scale_up_threshold);
+}
+
+static ssize_t hypiso_sysfs_scale_down_threshold_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	long threshold;
+
+	if (kstrtol(buf, 0, &threshold)) {
+		printk("HYPISO: parsing of '%s' as a number failed\n", buf);
+		return count;
+	}
+
+	if (threshold < 0 || threshold > 100) {
+		printk("HYPISO: scale_down_threshold must be between 0 and 100\n");
+		return count;
+	}
+
+	hypiso_scale_down_threshold = threshold;
+	printk("HYPISO: scale down threshold set to %ld%%\n", threshold);
+
+	return count;
+}
+
+static ssize_t hypiso_sysfs_scale_down_threshold_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hypiso_scale_down_threshold);
+}
+
+static ssize_t hypiso_sysfs_consecutive_checks_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	long checks;
+
+	if (kstrtol(buf, 0, &checks)) {
+		printk("HYPISO: parsing of '%s' as a number failed\n", buf);
+		return count;
+	}
+
+	if (checks < 1 || checks > 100) {
+		printk("HYPISO: consecutive_checks must be between 1 and 100\n");
+		return count;
+	}
+
+	hypiso_consecutive_checks = checks;
+	printk("HYPISO: consecutive checks set to %ld\n", checks);
+
+	return count;
+}
+
+static ssize_t hypiso_sysfs_consecutive_checks_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hypiso_consecutive_checks);
+}
+
+static ssize_t hypiso_sysfs_cooldown_ms_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	long cooldown;
+
+	if (kstrtol(buf, 0, &cooldown)) {
+		printk("HYPISO: parsing of '%s' as a number failed\n", buf);
+		return count;
+	}
+
+	if (cooldown < 0) {
+		printk("HYPISO: cooldown_ms must be non-negative\n");
+		return count;
+	}
+
+	hypiso_cooldown_ms = cooldown;
+	printk("HYPISO: cooldown set to %ld ms\n", cooldown);
+
+	return count;
+}
+
+static ssize_t hypiso_sysfs_cooldown_ms_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hypiso_cooldown_ms);
+}
+
 static struct kobj_attribute hypiso_sysfs_hypiso_on = {
 	.attr = {
 		.name = "hypiso_on",
@@ -190,6 +330,51 @@ static struct kobj_attribute hypiso_sysfs_scale_request = {
 	.show = hypiso_sysfs_scale_request_show,
 };
 
+static struct kobj_attribute hypiso_sysfs_window_size = {
+	.attr = {
+		.name = "window_size",
+		.mode = S_IWUSR | S_IRUSR,
+	},
+	.store = hypiso_sysfs_window_size_store,
+	.show = hypiso_sysfs_window_size_show,
+};
+
+static struct kobj_attribute hypiso_sysfs_scale_up_threshold = {
+	.attr = {
+		.name = "scale_up_threshold",
+		.mode = S_IWUSR | S_IRUSR,
+	},
+	.store = hypiso_sysfs_scale_up_threshold_store,
+	.show = hypiso_sysfs_scale_up_threshold_show,
+};
+
+static struct kobj_attribute hypiso_sysfs_scale_down_threshold = {
+	.attr = {
+		.name = "scale_down_threshold",
+		.mode = S_IWUSR | S_IRUSR,
+	},
+	.store = hypiso_sysfs_scale_down_threshold_store,
+	.show = hypiso_sysfs_scale_down_threshold_show,
+};
+
+static struct kobj_attribute hypiso_sysfs_consecutive_checks = {
+	.attr = {
+		.name = "consecutive_checks",
+		.mode = S_IWUSR | S_IRUSR,
+	},
+	.store = hypiso_sysfs_consecutive_checks_store,
+	.show = hypiso_sysfs_consecutive_checks_show,
+};
+
+static struct kobj_attribute hypiso_sysfs_cooldown_ms = {
+	.attr = {
+		.name = "cooldown_ms",
+		.mode = S_IWUSR | S_IRUSR,
+	},
+	.store = hypiso_sysfs_cooldown_ms_store,
+	.show = hypiso_sysfs_cooldown_ms_show,
+};
+
 static struct attribute *hysiso_attrs[] = {
 	&hypiso_sysfs_hypiso_on.attr,
 	&hypiso_sysfs_nr_host_cpus.attr,
@@ -197,6 +382,11 @@ static struct attribute *hysiso_attrs[] = {
 	&hypiso_sysfs_core_config.attr,
 	&hypiso_sysfs_watchdog_interval.attr,
 	&hypiso_sysfs_scale_request.attr,
+	&hypiso_sysfs_window_size.attr,
+	&hypiso_sysfs_scale_up_threshold.attr,
+	&hypiso_sysfs_scale_down_threshold.attr,
+	&hypiso_sysfs_consecutive_checks.attr,
+	&hypiso_sysfs_cooldown_ms.attr,
 	NULL,
 };
 
