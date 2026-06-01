@@ -145,8 +145,8 @@ static int hypiso_check_utilization(u64 avg_util)
 		tracker.consecutive_high = 0;
 
 		if (tracker.consecutive_low >= hypiso_consecutive_checks) {
-			printk("HYPISO: Low utilization detected (%llu%% < %d%%) for %d checks\n",
-				avg_util, hypiso_scale_down_threshold, hypiso_consecutive_checks);
+			//printk("HYPISO: Low utilization detected (%llu%% < %d%%) for %d checks\n",
+			//	avg_util, hypiso_scale_down_threshold, hypiso_consecutive_checks);
 			tracker.consecutive_low = 0;
 			tracker.last_scale_jiffies = now;
 			return -1;  /* Scale down */
@@ -194,7 +194,7 @@ static void hypiso_check_and_scale(void)
 		/* Scale down */
 		ret = hypiso_scale_down_host_cores();
 		if (ret != 0) {
-			printk("HYPISO: Failed to scale down host cores (ret=%d)\n", ret);
+			//printk("HYPISO: Failed to scale down host cores (ret=%d)\n", ret);
 		} else {
 			printk("HYPISO: Scaled down host cores (utilization: %llu%%)\n", avg_util);
 		}

@@ -16,80 +16,168 @@ struct kvm_vcpu *hypiso_vcpus[MAX_NR_VCPUS];
 
 DEFINE_SPINLOCK(hypiso_cpumask_lock);
 
+static int hypiso_get_core_mask(int cpu, struct cpumask *core)
+{
+	int weight;
+
+	if (cpu < 0 || cpu >= nr_cpu_ids || !cpu_online(cpu))
+		return -EINVAL;
+
+	cpumask_and(core, topology_sibling_cpumask(cpu), cpu_online_mask);
+	weight = cpumask_weight(core);
+	if (weight < 1)
+		return -EINVAL;
+	if (weight > 2) {
+		printk("HYPISO: unsupported core with %d sibling CPUs\n", weight);
+		return -EINVAL;
+	}
+
+	return weight;
+}
+
+static int hypiso_count_cores(const struct cpumask *cpus)
+{
+	int cpu, weight, cores = 0;
+	struct cpumask core, visited;
+
+	cpumask_clear(&visited);
+	for_each_cpu(cpu, cpus) {
+		if (cpumask_test_cpu(cpu, &visited))
+			continue;
+
+		weight = hypiso_get_core_mask(cpu, &core);
+		if (weight < 0)
+			continue;
+
+		cpumask_or(&visited, &visited, &core);
+		cores++;
+	}
+
+	return cores;
+}
+
+static bool hypiso_one_core_left(const struct cpumask *cpus)
+{
+	return hypiso_count_cores(cpus) <= 1;
+}
+
+static int hypiso_find_free_core(void)
+{
+	int cpu, weight;
+	struct cpumask allocated, core, visited;
+
+	cpumask_clear(&visited);
+	cpumask_or(&allocated, host_cpus, guest_cpus);
+
+	for_each_cpu(cpu, cpu_online_mask) {
+		if (cpumask_test_cpu(cpu, &visited))
+			continue;
+
+		weight = hypiso_get_core_mask(cpu, &core);
+		if (weight < 0)
+			return weight;
+
+		cpumask_or(&visited, &visited, &core);
+		if (cpumask_intersects(&core, &allocated))
+			continue;
+
+		return cpu;
+	}
+
+	return -ENOSPC;
+}
+
 /*
  * Remove one core (and all its siblings) from @cpus.
- * Returns the first CPU number of the removed core, or -1 if cpus is empty.
+ * Returns the number of removed logical CPUs, or a negative error code.
  */
-static int hypiso_remove_one_core(cpumask_var_t cpus)
+static int hypiso_remove_one_core(cpumask_var_t cpus, int *removed_cpu)
 {
-	int cpu, sibling;
-	int first_cpu;
+	int cpu, sibling, weight;
+	struct cpumask core;
 
 	printk("HYPISO: Before %*pbl\n", cpumask_pr_args(cpus));
 	cpu = cpumask_first(cpus);
 	printk("HYPISO: first %d\n", cpu);
 	if (cpu >= nr_cpu_ids)
-		return -1;
+		return -ENOSPC;
 
-	first_cpu = cpu;
-	for_each_cpu(sibling, topology_sibling_cpumask(cpu)) {
+	if (hypiso_one_core_left(cpus)) {
+		printk("HYPISO: Cannot remove core, because only siblings are in the set\n");
+		return -EINVAL;
+	}
+
+	weight = hypiso_get_core_mask(cpu, &core);
+	if (weight < 0)
+		return weight;
+
+	*removed_cpu = cpu;
+	for_each_cpu(sibling, &core) {
 		printk("HYPISO: sibling %d\n", sibling);
 		cpumask_clear_cpu(sibling, cpus);
 	}
 
 	printk("HYPISO: After  %*pbl\n", cpumask_pr_args(cpus));
 
-	return first_cpu;
+	return weight;
 }
 
 /*
  * Add one core (and all its siblings) to @cpus based on the specified CPU number.
- * Returns 0 on success, or -1 if the CPU is invalid.
+ * Returns the number of added logical CPUs, or a negative error code.
  */
 static int hypiso_add_one_core(cpumask_var_t cpus, int cpu)
 {
-	int sibling;
+	int sibling, weight;
+	struct cpumask core;
 
 	printk("HYPISO: Before %*pbl\n", cpumask_pr_args(cpus));
-	if (cpu < 0 || cpu >= nr_cpu_ids)
-		return -1;
+	weight = hypiso_get_core_mask(cpu, &core);
+	if (weight < 0)
+		return weight;
 
-	for_each_cpu(sibling, topology_sibling_cpumask(cpu))
+	for_each_cpu(sibling, &core)
 		cpumask_set_cpu(sibling, cpus);
 
 	printk("HYPISO: After  %*pbl\n", cpumask_pr_args(cpus));
 
-	return 0;
+	return weight;
 }
 
 /*
- * Set @target CPUs in @cpus using a small amount of cores, none of which have a
- * CPU in @taken.
+ * Set at least @target CPUs in @cpus using whole cores, none of which have a
+ * sibling CPU in @taken. Returns the actual logical CPU count selected.
  */
 static int hypiso_set_cores(cpumask_var_t cpus, int target, cpumask_var_t taken)
 {
-	int cpu, sibling;
-	struct cpumask forbidden;
+	int cpu, sibling, weight;
+	struct cpumask core, visited;
 
-	/*
-	 * Mark all siblings of taken CPUs as forbidden.
-	 */
-	cpumask_clear(&forbidden);
-	for_each_cpu(cpu, taken)
-		cpumask_or(&forbidden, &forbidden, topology_sibling_cpumask(cpu));
+	cpumask_clear(&visited);
 
 	for_each_cpu(cpu, cpu_online_mask) {
-		if (cpumask_test_cpu(cpu, &forbidden))
+		if (cpumask_weight(cpus) >= target)
+			break;
+		if (cpumask_test_cpu(cpu, &visited))
 			continue;
-		for_each_cpu(sibling, topology_sibling_cpumask(cpu)) {
-			if (cpumask_weight(cpus) >= target)
-				break;
+
+		weight = hypiso_get_core_mask(cpu, &core);
+		if (weight < 0)
+			continue;
+
+		cpumask_or(&visited, &visited, &core);
+		if (cpumask_intersects(&core, taken))
+			continue;
+
+		for_each_cpu(sibling, &core)
 			cpumask_set_cpu(sibling, cpus);
-		}
 	}
 
-	if (cpumask_weight(cpus) != target)
+	if (cpumask_weight(cpus) < target)
 		printk("HYPISO: there are only %d cpus available\n", cpumask_weight(cpus));
+	else if (cpumask_weight(cpus) != target)
+		printk("HYPISO: rounded CPU request %d to %d to keep whole cores\n",
+			target, cpumask_weight(cpus));
 
 	return cpumask_weight(cpus);
 }
@@ -156,14 +244,22 @@ void hypiso_init_vcpu(struct kvm_vcpu *vcpu)
 
 void hypiso_set_nr_host_cpus(int new_nr_host_cpus)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&hypiso_cpumask_lock, flags);
 	cpumask_clear(host_cpus);
 	hypiso_nr_host_cpus = hypiso_set_cores(host_cpus, new_nr_host_cpus, guest_cpus);
+	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 }
 
 void hypiso_set_nr_guest_cpus(int new_nr_guest_cpus)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&hypiso_cpumask_lock, flags);
 	cpumask_clear(guest_cpus);
 	hypiso_nr_guest_cpus = hypiso_set_cores(guest_cpus, new_nr_guest_cpus, host_cpus);
+	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 }
 
 
@@ -175,38 +271,40 @@ void hypiso_set_nr_guest_cpus(int new_nr_guest_cpus)
  */
 int hypiso_scale_up_host_cores(void)
 {
-	int new_nr;
+	int added_cpus;
+	int core_cpu;
 	int repurposed_cpu;
 	unsigned long flags;
 
-	new_nr = hypiso_nr_host_cpus + 1;
-	printk("HYPISO: Scaling up host cores from %d to %d...\n",
-		hypiso_nr_host_cpus, new_nr);
+	printk("HYPISO: Scaling up host cores from %d CPUs...\n",
+		hypiso_nr_host_cpus);
 
 	spin_lock_irqsave(&hypiso_cpumask_lock, flags);
 
-	if (new_nr + hypiso_nr_guest_cpus > num_online_cpus()) {
+	core_cpu = hypiso_find_free_core();
+	if (core_cpu < 0) {
 		/* No unassigned CPUs left */
 		/* Repurpose a guest core for host use */
 		printk("HYPISO: Cannot scale up host cores; trying to scale down guest cores first\n");
 
 		/* For the prototype we assume that there's only one guest */
-		/* So 1 guest CPU total is the minimum */
-		if (hypiso_nr_guest_cpus <= 1) {
+		/* So 1 guest core total is the minimum */
+		if (hypiso_one_core_left(guest_cpus)) {
 			printk("HYPISO: Cannot scale down guest cores; not enough CPUs available\n");
 			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 			return -1;
 		}
 
-		repurposed_cpu = hypiso_remove_one_core(guest_cpus);
-		if (repurposed_cpu < 0) {
+		added_cpus = hypiso_remove_one_core(guest_cpus, &repurposed_cpu);
+		if (added_cpus < 0) {
 			printk("HYPISO: Failed to repurpose a guest core\n");
 			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 			return -1;
 		}
 
-		hypiso_nr_guest_cpus--;
-		printk("HYPISO: Repurposing guest CPU %d for host use\n", repurposed_cpu);
+		hypiso_nr_guest_cpus -= added_cpus;
+		printk("HYPISO: Repurposing guest core containing CPU %d for host use\n",
+			repurposed_cpu);
 
 		/* vCPU affinity is updated before the core is added to the host pool,
 		to prevent them being scheduled on a host core */
@@ -216,18 +314,22 @@ int hypiso_scale_up_host_cores(void)
 		hypiso_microarch_clean_cpu(repurposed_cpu);
 
 		/* Add the repurposed guest core to host pool */
-		if (hypiso_add_one_core(host_cpus, repurposed_cpu) < 0) {
+		added_cpus = hypiso_add_one_core(host_cpus, repurposed_cpu);
+		if (added_cpus < 0) {
 			printk("HYPISO: Failed to add repurposed core to host\n");
 			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 			return -1;
 		}
-		hypiso_nr_host_cpus++;
+		hypiso_nr_host_cpus += added_cpus;
 
 	} else {
-		/* TODOs:
-		- Can this be made more efficient?
-		- Should the microarch state be cleaned before adding the core to the host or do we assume it is clean?*/
-		hypiso_set_nr_host_cpus(new_nr);
+		added_cpus = hypiso_add_one_core(host_cpus, core_cpu);
+		if (added_cpus < 0) {
+			printk("HYPISO: Failed to add free core to host\n");
+			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
+			return -1;
+		}
+		hypiso_nr_host_cpus += added_cpus;
 	}
 
 	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
@@ -244,31 +346,31 @@ int hypiso_scale_up_host_cores(void)
  */
 int hypiso_scale_down_host_cores(void)
 {
-	int new_nr;
+	int moved_cpus;
 	int repurposed_cpu;
 	unsigned long flags;
 
 	spin_lock_irqsave(&hypiso_cpumask_lock, flags);
 
-	new_nr = hypiso_nr_host_cpus - 1;
-	if (new_nr < 1) {
-		printk("HYPISO: Cannot scale down below 1 host core\n");
+	if (hypiso_one_core_left(host_cpus)) {
+		//printk("HYPISO: Cannot scale down below 1 host core\n");
 		spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 		return -EINVAL;
 	}
 
-	printk("HYPISO: Scaling down host cores from %d to %d\n",
-		hypiso_nr_host_cpus, new_nr);
+	printk("HYPISO: Scaling down host cores from %d CPUs\n",
+		hypiso_nr_host_cpus);
 
-	repurposed_cpu = hypiso_remove_one_core(host_cpus);
-	if (repurposed_cpu < 0) {
+	moved_cpus = hypiso_remove_one_core(host_cpus, &repurposed_cpu);
+	if (moved_cpus < 0) {
 		printk("HYPISO: Failed to repurpose host core\n");
 		spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 		return -1;
 	}
 
-	hypiso_nr_host_cpus--;
-	printk("HYPISO: Repurposing host CPU %d for guest use\n", repurposed_cpu);
+	hypiso_nr_host_cpus -= moved_cpus;
+	printk("HYPISO: Repurposing host core containing CPU %d for guest use\n",
+		repurposed_cpu);
 
 	/* Update affinity of host processes, IRQs, and watchdog before adding
 	core to guest pool */
@@ -278,12 +380,13 @@ int hypiso_scale_down_host_cores(void)
 	hypiso_microarch_clean_cpu(repurposed_cpu);
 
 	/* Add the repurposed host core to guest pool */
-	if (hypiso_add_one_core(guest_cpus, repurposed_cpu) < 0) {
+	moved_cpus = hypiso_add_one_core(guest_cpus, repurposed_cpu);
+	if (moved_cpus < 0) {
 		printk("HYPISO: Failed to add repurposed core to guest\n");
 		spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 		return -1;
 	}
-	hypiso_nr_guest_cpus++;
+	hypiso_nr_guest_cpus += moved_cpus;
 
 	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 
