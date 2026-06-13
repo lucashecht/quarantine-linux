@@ -11,6 +11,7 @@ extern cpumask_var_t guest_cpus;
 extern int hypiso_on;
 extern int hypiso_nr_host_cpus;
 extern int hypiso_nr_guest_cpus;
+extern int hypiso_max_cpus;
 extern u64 hypiso_nr_vcpus;
 extern struct kvm_vcpu *hypiso_vcpus[MAX_NR_VCPUS];
 extern spinlock_t hypiso_cpumask_lock;

@@ -10,11 +10,17 @@ cpumask_var_t guest_cpus;
 int hypiso_on = 0;
 int hypiso_nr_host_cpus = 1;
 int hypiso_nr_guest_cpus = 1;
+int hypiso_max_cpus = 2;
 
 u64 hypiso_nr_vcpus = 0;
 struct kvm_vcpu *hypiso_vcpus[MAX_NR_VCPUS];
 
 DEFINE_SPINLOCK(hypiso_cpumask_lock);
+
+static void hypiso_update_max_cpus(void)
+{
+	hypiso_max_cpus = hypiso_nr_host_cpus + hypiso_nr_guest_cpus;
+}
 
 static int hypiso_get_core_mask(int cpu, struct cpumask *core)
 {
@@ -59,32 +65,6 @@ static int hypiso_count_cores(const struct cpumask *cpus)
 static bool hypiso_one_core_left(const struct cpumask *cpus)
 {
 	return hypiso_count_cores(cpus) <= 1;
-}
-
-static int hypiso_find_free_core(void)
-{
-	int cpu, weight;
-	struct cpumask allocated, core, visited;
-
-	cpumask_clear(&visited);
-	cpumask_or(&allocated, host_cpus, guest_cpus);
-
-	for_each_cpu(cpu, cpu_online_mask) {
-		if (cpumask_test_cpu(cpu, &visited))
-			continue;
-
-		weight = hypiso_get_core_mask(cpu, &core);
-		if (weight < 0)
-			return weight;
-
-		cpumask_or(&visited, &visited, &core);
-		if (cpumask_intersects(&core, &allocated))
-			continue;
-
-		return cpu;
-	}
-
-	return -ENOSPC;
 }
 
 /*
@@ -188,6 +168,7 @@ static void hypiso_config_cores(void)
 	cpumask_clear(guest_cpus);
 	hypiso_nr_host_cpus = hypiso_set_cores(host_cpus, hypiso_nr_host_cpus, guest_cpus);
 	hypiso_nr_guest_cpus = hypiso_set_cores(guest_cpus, hypiso_nr_guest_cpus, host_cpus);
+	hypiso_update_max_cpus();
 }
 
 void hypiso_init(void)
@@ -249,6 +230,7 @@ void hypiso_set_nr_host_cpus(int new_nr_host_cpus)
 	spin_lock_irqsave(&hypiso_cpumask_lock, flags);
 	cpumask_clear(host_cpus);
 	hypiso_nr_host_cpus = hypiso_set_cores(host_cpus, new_nr_host_cpus, guest_cpus);
+	hypiso_update_max_cpus();
 	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 }
 
@@ -259,20 +241,19 @@ void hypiso_set_nr_guest_cpus(int new_nr_guest_cpus)
 	spin_lock_irqsave(&hypiso_cpumask_lock, flags);
 	cpumask_clear(guest_cpus);
 	hypiso_nr_guest_cpus = hypiso_set_cores(guest_cpus, new_nr_guest_cpus, host_cpus);
+	hypiso_update_max_cpus();
 	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 }
 
 
 // TODO: check if affinity is updated after scaling (hypiso_reroute_irqs etc.)
 /*
- * Scale up host cores by 1. If no unassigned CPUs are available,
- * try to repurpose a guest core first.
+ * Scale up host cores by repurposing one guest core.
  * Returns 0 on success, -1 if scaling is not possible.
  */
 int hypiso_scale_up_host_cores(void)
 {
 	int added_cpus;
-	int core_cpu;
 	int repurposed_cpu;
 	unsigned long flags;
 
@@ -281,56 +262,41 @@ int hypiso_scale_up_host_cores(void)
 
 	spin_lock_irqsave(&hypiso_cpumask_lock, flags);
 
-	core_cpu = hypiso_find_free_core();
-	if (core_cpu < 0) {
-		/* No unassigned CPUs left */
-		/* Repurpose a guest core for host use */
-		printk("HYPISO: Cannot scale up host cores; trying to scale down guest cores first\n");
-
-		/* For the prototype we assume that there's only one guest */
-		/* So 1 guest core total is the minimum */
-		if (hypiso_one_core_left(guest_cpus)) {
-			printk("HYPISO: Cannot scale down guest cores; not enough CPUs available\n");
-			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
-			return -1;
-		}
-
-		added_cpus = hypiso_remove_one_core(guest_cpus, &repurposed_cpu);
-		if (added_cpus < 0) {
-			printk("HYPISO: Failed to repurpose a guest core\n");
-			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
-			return -1;
-		}
-
-		hypiso_nr_guest_cpus -= added_cpus;
-		printk("HYPISO: Repurposing guest core containing CPU %d for host use\n",
-			repurposed_cpu);
-
-		/* vCPU affinity is updated before the core is added to the host pool,
-		to prevent them being scheduled on a host core */
-		hypiso_isolate_vcpus(guest_cpus);
-
-		/* Clean the repurposed CPU before adding to host pool */
-		hypiso_microarch_clean_cpu(repurposed_cpu);
-
-		/* Add the repurposed guest core to host pool */
-		added_cpus = hypiso_add_one_core(host_cpus, repurposed_cpu);
-		if (added_cpus < 0) {
-			printk("HYPISO: Failed to add repurposed core to host\n");
-			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
-			return -1;
-		}
-		hypiso_nr_host_cpus += added_cpus;
-
-	} else {
-		added_cpus = hypiso_add_one_core(host_cpus, core_cpu);
-		if (added_cpus < 0) {
-			printk("HYPISO: Failed to add free core to host\n");
-			spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
-			return -1;
-		}
-		hypiso_nr_host_cpus += added_cpus;
+	/* For the prototype we assume that there's only one guest */
+	/* So 1 guest core total is the minimum */
+	if (hypiso_one_core_left(guest_cpus)) {
+		printk("HYPISO: Cannot scale down guest cores; not enough CPUs available\n");
+		spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
+		return -1;
 	}
+
+	added_cpus = hypiso_remove_one_core(guest_cpus, &repurposed_cpu);
+	if (added_cpus < 0) {
+		printk("HYPISO: Failed to repurpose a guest core\n");
+		spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
+		return -1;
+	}
+
+	hypiso_nr_guest_cpus -= added_cpus;
+	printk("HYPISO: Repurposing guest core containing CPU %d for host use\n",
+		repurposed_cpu);
+
+	/* vCPU affinity is updated before the core is added to the host pool,
+	 * to prevent them being scheduled on a host core
+	 */
+	hypiso_isolate_vcpus(guest_cpus);
+
+	/* Clean the repurposed CPU before adding to host pool */
+	hypiso_microarch_clean_cpu(repurposed_cpu);
+
+	/* Add the repurposed guest core to host pool */
+	added_cpus = hypiso_add_one_core(host_cpus, repurposed_cpu);
+	if (added_cpus < 0) {
+		printk("HYPISO: Failed to add repurposed core to host\n");
+		spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
+		return -1;
+	}
+	hypiso_nr_host_cpus += added_cpus;
 
 	spin_unlock_irqrestore(&hypiso_cpumask_lock, flags);
 

@@ -77,8 +77,9 @@ static ssize_t hypiso_sysfs_nr_guest_cpus_show(struct kobject *kobj,
 static ssize_t hypiso_sysfs_core_config_show(struct kobject *kobj,
 					struct kobj_attribute *attr, char *buf)
 {
-	return sprintf(buf, "host_cpus  %*pbl\nguest_cpus %*pbl\n",
-		cpumask_pr_args(host_cpus), cpumask_pr_args(guest_cpus));
+	return sprintf(buf, "host_cpus  %*pbl\nguest_cpus %*pbl\nmax_cpus   %d\n",
+		cpumask_pr_args(host_cpus), cpumask_pr_args(guest_cpus),
+		hypiso_max_cpus);
 }
 
 static ssize_t hypiso_sysfs_watchdog_interval_store(struct kobject *kobj,
