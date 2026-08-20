@@ -67,7 +67,6 @@ void hypiso_enforce_isolation(void)
 	hypiso_isolate_processes(host_cpus);
 	hypiso_isolate_watchdog(host_cpus);
 	hypiso_reroute_irqs(host_cpus);
-	hypiso_isolate_vcpus(guest_cpus); // now this gets called twice
 }
 
 void hypiso_enable(void)

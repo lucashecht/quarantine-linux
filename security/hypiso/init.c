@@ -319,7 +319,7 @@ int hypiso_scale_down_host_cores(void)
 
 	/* Update affinity of host processes, IRQs, and watchdog before adding
 	core to guest pool */
-	hypiso_enforce_isolation(); // TODO: reduce work performed while holding lock
+	hypiso_enforce_isolation();
 
 	/* Clean the repurposed CPU before adding to guest pool */
 	hypiso_microarch_clean_cpu(repurposed_cpu);
