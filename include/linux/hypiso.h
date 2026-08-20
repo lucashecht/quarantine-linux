@@ -3,7 +3,6 @@
 
 struct kvm_vcpu;
 void hypiso_vcpu_run(struct kvm_vcpu *vcpu);
-void hypiso_switch_fpu_return(struct task_struct *task);
 
 #ifdef CONFIG_HYPISO
 void hypiso_host_vmrun(struct kvm_vcpu *vcpu);
