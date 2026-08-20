@@ -278,6 +278,49 @@ static ssize_t hypiso_sysfs_cooldown_ms_show(struct kobject *kobj,
 	return sprintf(buf, "%d\n", hypiso_cooldown_ms);
 }
 
+/*
+ * Read-only report of the most recent scaling operation, for latency
+ * measurement. 'seq' increments once per completed operation, so a reader can
+ * detect a fresh sample; it is read with acquire semantics to pair with the
+ * release store in the watchdog, guaranteeing the other fields belong to it.
+ *   seq : operation counter (monotonic)
+ *   dir : +1 scaled up, -1 scaled down, 0 none yet
+ *   ret : return code of the operation (0 = success)
+ *   ns  : measured duration of the operation in nanoseconds
+ */
+static ssize_t hypiso_sysfs_scale_last_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	u64 seq = smp_load_acquire(&hypiso_scale_seq);
+
+	return sprintf(buf, "seq %llu\ndir %d\nret %d\nns %llu\n",
+		seq, hypiso_last_scale_dir, hypiso_last_scale_ret,
+		hypiso_last_scale_ns);
+}
+
+static ssize_t hypiso_sysfs_debug_store(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	long val;
+
+	if (kstrtol(buf, 0, &val)) {
+		printk("HYPISO: parsing of '%s' as a number failed\n", buf);
+		return count;
+	}
+
+	hypiso_debug = val ? 1 : 0;
+	printk("HYPISO: debug logging %s\n", hypiso_debug ? "enabled" : "disabled");
+
+	return count;
+}
+
+static ssize_t hypiso_sysfs_debug_show(struct kobject *kobj,
+					struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", hypiso_debug);
+}
+
 static struct kobj_attribute hypiso_sysfs_hypiso_on = {
 	.attr = {
 		.name = "hypiso_on",
@@ -376,6 +419,23 @@ static struct kobj_attribute hypiso_sysfs_cooldown_ms = {
 	.show = hypiso_sysfs_cooldown_ms_show,
 };
 
+static struct kobj_attribute hypiso_sysfs_scale_last = {
+	.attr = {
+		.name = "scale_last",
+		.mode = S_IRUSR,
+	},
+	.show = hypiso_sysfs_scale_last_show,
+};
+
+static struct kobj_attribute hypiso_sysfs_debug = {
+	.attr = {
+		.name = "debug",
+		.mode = S_IWUSR | S_IRUSR,
+	},
+	.store = hypiso_sysfs_debug_store,
+	.show = hypiso_sysfs_debug_show,
+};
+
 static struct attribute *hysiso_attrs[] = {
 	&hypiso_sysfs_hypiso_on.attr,
 	&hypiso_sysfs_nr_host_cpus.attr,
@@ -388,6 +448,8 @@ static struct attribute *hysiso_attrs[] = {
 	&hypiso_sysfs_scale_down_threshold.attr,
 	&hypiso_sysfs_consecutive_checks.attr,
 	&hypiso_sysfs_cooldown_ms.attr,
+	&hypiso_sysfs_scale_last.attr,
+	&hypiso_sysfs_debug.attr,
 	NULL,
 };
 

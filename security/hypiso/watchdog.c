@@ -2,10 +2,19 @@
 #include <linux/delay.h>
 #include <linux/kernel_stat.h>
 #include <linux/sched/cputime.h>
+#include <linux/timekeeping.h>
 #include "internal.h"
 
 int hypiso_watchdog_interval_ms = 1000;  // 1 second
 int hypiso_scale_request = 0;  // 0 = no change, 1 = scale up, -1 = scale down
+
+/*
+ * Latency instrumentation for evaluation.
+ */
+u64 hypiso_last_scale_ns  = 0;   /* duration of the last scaling operation, ns */
+int hypiso_last_scale_dir = 0;   /* +1 = scaled up, -1 = scaled down, 0 = none */
+int hypiso_last_scale_ret = 0;   /* return code of the last scaling operation  */
+u64 hypiso_scale_seq      = 0;   /* incremented after each measured operation  */
 
 /* Utilization tracking configuration */
 #define MAX_WINDOW_SIZE 100				 // Maximum samples in window
@@ -170,6 +179,7 @@ static void hypiso_check_and_scale(void)
 	int request;
 	int scale_decision;
 	int ret;
+	u64 t0, dur;
 
 	request = READ_ONCE(hypiso_scale_request);  // atomic read
 
@@ -182,24 +192,29 @@ static void hypiso_check_and_scale(void)
 	/* Check if we should scale */
 	scale_decision = request != 0 ? request : hypiso_check_utilization(avg_util);
 
-	if (scale_decision > 0) {
-		/* Scale up */
-		ret = hypiso_scale_up_host_cores();
-		if (ret != 0) {
-			printk("HYPISO: Failed to scale up host cores (ret=%d)\n", ret);
-		} else {
-			printk("HYPISO: Scaled up host cores (utilization: %llu%%)\n", avg_util);
-		}
-	} else if (scale_decision < 0) {
-		/* Scale down */
-		ret = hypiso_scale_down_host_cores();
-		if (ret != 0) {
-			//printk("HYPISO: Failed to scale down host cores (ret=%d)\n", ret);
-		} else {
-			printk("HYPISO: Scaled down host cores (utilization: %llu%%)\n", avg_util);
-		}
-	}
+	if (scale_decision == 0)
+		goto out;
 
+	t0 = ktime_get_ns();
+	if (scale_decision > 0)
+		ret = hypiso_scale_up_host_cores();
+	else
+		ret = hypiso_scale_down_host_cores();
+	dur = ktime_get_ns() - t0;
+
+	hypiso_last_scale_ns  = dur;
+	hypiso_last_scale_dir = scale_decision;
+	hypiso_last_scale_ret = ret;
+	smp_store_release(&hypiso_scale_seq, hypiso_scale_seq + 1);
+
+	if (ret == 0)
+		printk("HYPISO: Scaled %s host cores in %llu ns (utilization: %llu%%)\n",
+			scale_decision > 0 ? "up" : "down", dur, avg_util);
+	else
+		printk("HYPISO: Failed to scale %s host cores (ret=%d) after %llu ns\n",
+			scale_decision > 0 ? "up" : "down", ret, dur);
+
+out:
 	WRITE_ONCE(hypiso_scale_request, 0);
 }
 

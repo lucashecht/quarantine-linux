@@ -37,11 +37,21 @@ extern pid_t hypiso_watchdog_pid;
 void hypiso_init_watchdog(void);
 void hypiso_stop_watchdog(void);
 extern int hypiso_watchdog_interval_ms;
-extern int hypiso_scale_request;  /* 0 = no change, 1 = scale up, -1 = scale down */
+extern int hypiso_scale_request;  // 0 = no change, 1 = scale up, -1 = scale down
 extern int hypiso_window_size;
 extern int hypiso_scale_up_threshold;
 extern int hypiso_scale_down_threshold;
 extern int hypiso_consecutive_checks;
 extern int hypiso_cooldown_ms;
+
+// Scaling-latency instrumentation published via sysfs
+extern u64 hypiso_last_scale_ns;
+extern int hypiso_last_scale_dir;  // +1 = scaled up, -1 = scaled down, 0 = none
+extern int hypiso_last_scale_ret;  // return code of the last scaling operation
+extern u64 hypiso_scale_seq;       // incremented after each measured operation
+
+extern int hypiso_debug;
+#define hypiso_dbg(fmt, ...) \
+	do { if (hypiso_debug) printk(fmt, ##__VA_ARGS__); } while (0)
 
 #endif /* __HYPISO_INTERNAL_H__ */

@@ -11,6 +11,7 @@ int hypiso_on = 0;
 int hypiso_nr_host_cpus = 1;
 int hypiso_nr_guest_cpus = 1;
 int hypiso_max_cpus = 2;
+int hypiso_debug = 1;
 
 u64 hypiso_nr_vcpus = 0;
 struct kvm_vcpu *hypiso_vcpus[MAX_NR_VCPUS];
@@ -74,9 +75,9 @@ static int hypiso_remove_one_core(cpumask_var_t cpus, int *removed_cpu)
 	int cpu, sibling, weight;
 	struct cpumask core;
 
-	printk("HYPISO: Before %*pbl\n", cpumask_pr_args(cpus));
+	hypiso_dbg("HYPISO: Before %*pbl\n", cpumask_pr_args(cpus));
 	cpu = cpumask_first(cpus);
-	printk("HYPISO: first %d\n", cpu);
+	hypiso_dbg("HYPISO: first %d\n", cpu);
 	if (cpu >= nr_cpu_ids)
 		return -ENOSPC;
 
@@ -91,11 +92,11 @@ static int hypiso_remove_one_core(cpumask_var_t cpus, int *removed_cpu)
 
 	*removed_cpu = cpu;
 	for_each_cpu(sibling, &core) {
-		printk("HYPISO: sibling %d\n", sibling);
+		hypiso_dbg("HYPISO: sibling %d\n", sibling);
 		cpumask_clear_cpu(sibling, cpus);
 	}
 
-	printk("HYPISO: After  %*pbl\n", cpumask_pr_args(cpus));
+	hypiso_dbg("HYPISO: After  %*pbl\n", cpumask_pr_args(cpus));
 
 	return weight;
 }
@@ -109,7 +110,7 @@ static int hypiso_add_one_core(cpumask_var_t cpus, int cpu)
 	int sibling, weight;
 	struct cpumask core;
 
-	printk("HYPISO: Before %*pbl\n", cpumask_pr_args(cpus));
+	hypiso_dbg("HYPISO: Before %*pbl\n", cpumask_pr_args(cpus));
 	weight = hypiso_get_core_mask(cpu, &core);
 	if (weight < 0)
 		return weight;
@@ -117,7 +118,7 @@ static int hypiso_add_one_core(cpumask_var_t cpus, int cpu)
 	for_each_cpu(sibling, &core)
 		cpumask_set_cpu(sibling, cpus);
 
-	printk("HYPISO: After  %*pbl\n", cpumask_pr_args(cpus));
+	hypiso_dbg("HYPISO: After  %*pbl\n", cpumask_pr_args(cpus));
 
 	return weight;
 }
@@ -246,7 +247,7 @@ int hypiso_scale_up_host_cores(void)
 	int added_cpus;
 	int repurposed_cpu;
 
-	printk("HYPISO: Scaling up host cores from %d CPUs...\n",
+	hypiso_dbg("HYPISO: Scaling up host cores from %d CPUs...\n",
 		hypiso_nr_host_cpus);
 
 
@@ -264,7 +265,7 @@ int hypiso_scale_up_host_cores(void)
 	}
 
 	hypiso_nr_guest_cpus -= added_cpus;
-	printk("HYPISO: Repurposing guest core containing CPU %d for host use\n",
+	hypiso_dbg("HYPISO: Repurposing guest core containing CPU %d for host use\n",
 		repurposed_cpu);
 
 	/* vCPU affinity is updated before the core is added to the host pool,
@@ -304,7 +305,7 @@ int hypiso_scale_down_host_cores(void)
 		return -EINVAL;
 	}
 
-	printk("HYPISO: Scaling down host cores from %d CPUs\n",
+	hypiso_dbg("HYPISO: Scaling down host cores from %d CPUs\n",
 		hypiso_nr_host_cpus);
 
 	moved_cpus = hypiso_remove_one_core(host_cpus, &repurposed_cpu);
@@ -314,7 +315,7 @@ int hypiso_scale_down_host_cores(void)
 	}
 
 	hypiso_nr_host_cpus -= moved_cpus;
-	printk("HYPISO: Repurposing host core containing CPU %d for guest use\n",
+	hypiso_dbg("HYPISO: Repurposing host core containing CPU %d for guest use\n",
 		repurposed_cpu);
 
 	/* Update affinity of host processes, IRQs, and watchdog before adding
